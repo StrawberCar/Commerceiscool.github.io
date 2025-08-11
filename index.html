@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>COMMERCE HELL YEAAAA — Justine</title>
+
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css" />
+    <script src="script.js" defer></script>
+</head>
+<body>
+    <!-- Intro -->
+    <header class="intro">
+        <canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+        <div class="intro-overlay"></div>
+
+        <div class="intro-text">
+            <h1 class="title">WE LOVE YOU JUSTINEEEE</h1>
+            <p class="subtitle">YOU ARE SO AMAZINGLY PEAK</p>
+
+            <div class="controls">
+                <button id="to-gallery" class="btn">See the Personal Gallery ↓</button>
+                <button id="to-quotes" class="btn outline">Go to Quotes ✒️</button>
+            </div>
+
+            <div class="countdown-wrap" aria-live="polite">
+                <div class="countdown-label">COUNTDOWN UNTIL JUSTINE COMMEMORATION DAY</div>
+                <div id="countdown" class="countdown-number">--d --:--:--</div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Quotes -->
+    <section id="quotes" class="section quotes-section">
+        <div class="container">
+            <h2>Quotes</h2>
+
+            <div class="quote-featured" id="quote-featured"></div>
+
+            <div class="quotes-list" id="quotes-list"></div>
+        </div>
+    </section>
+
+    <!-- Gallery -->
+    <section id="gallery" class="section gallery-section">
+        <div class="container">
+            <div class="gallery-header">
+                <h2>Art Gallery</h2>
+                <div class="gallery-controls">
+                    <input id="gallery-search" placeholder="Search by name..." />
+                    <button id="shuffle-btn" class="btn small">Shuffle</button>
+                    <button id="regen-manifest" class="btn small outline" title="Try fetching art/manifest.json">Reload Manifest</button>
+                </div>
+            </div>
+
+            <!-- Featured carousel -->
+            <div id="featured-carousel" class="featured-carousel" aria-hidden="false"></div>
+
+            <!-- Grid -->
+            <div id="gallery-grid" class="gallery-grid"></div>
+        </div>
+    </section>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true">
+        <button id="lb-close" class="lb-btn close">✕</button>
+        <button id="lb-prev" class="lb-btn nav left">◀</button>
+        <button id="lb-next" class="lb-btn nav right">▶</button>
+        <div class="lb-content">
+            <img id="lb-image" src="" alt="" />
+            <div id="lb-caption" class="lb-caption"></div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <p>Made with ❤️ for our amazing commerce teacher — Justine.</p>
+        </div>
+    </footer>
+</body>
+</html>
