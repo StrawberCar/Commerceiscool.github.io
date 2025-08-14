@@ -39,14 +39,25 @@
       border-bottom:1px solid rgba(255,255,255,.12);box-shadow:0 6px 24px rgba(0,0,0,.25)
     }
     .header-inner{
-      max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:16px
+      max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap
     }
     .brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:.3px}
     .brand .logo{width:30px;height:30px;border-radius:10px;background:conic-gradient(from 180deg at 50% 50%,var(--brand-1),var(--brand-2));box-shadow:0 6px 18px rgba(0,212,255,.35)}
-    .spacer{flex:1}
+    .spacer{flex:1 1 auto}
     .countdown{font-weight:700; font-size:.95rem; opacity:.95; text-align:center}
     .clock{font-weight:600; font-variant-numeric:tabular-nums; opacity:.9}
-    .header-actions{display:flex; align-items:center; gap:10px}
+    .header-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+
+    /* Search */
+    .search{
+      display:flex; align-items:center; gap:8px; padding:6px 10px;
+      border:1px solid rgba(255,255,255,.18); border-radius:12px;
+      background:rgba(255,255,255,.08); min-width:260px; flex:1 0 260px
+    }
+    .search input{
+      flex:1; background:transparent; border:none; color:var(--text); outline:none; font:inherit
+    }
+
     .iconbtn{
       border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.08);
       color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:700; transition:.2s
@@ -58,10 +69,10 @@
     .post{
       background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.05));
       border:1px solid var(--card-border); border-radius:var(--radius); overflow:hidden;
-      box-shadow:var(--shadow); margin:24px 0; transform:translateZ(0); transition:transform .2s, box-shadow .2s
+      box-shadow:var(--shadow); margin:24px 0; transform:translateZ(0); transition:transform .2s, box-shadow .2s; cursor:pointer
     }
     .post:hover{transform:translateY(-4px); box-shadow:0 16px 40px rgba(0,0,0,.45)}
-    .post-header{display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08)}
+    .post-header{display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08)}
     .username{font-weight:700}
     .handle{color:var(--muted); font-weight:600; font-size:.9rem; margin-left:6px}
     .post img{width:100%; display:block; background:#0b0d12; aspect-ratio:16/9; object-fit:cover}
@@ -86,6 +97,7 @@
     .preview{width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:10px; border:1px solid rgba(255,255,255,.18); display:none}
     .actions{display:flex; justify-content:flex-end; gap:10px; margin-top:8px}
     .btn{border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.08); color:var(--text); padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:700; transition:.2s}
+    .btn[disabled]{opacity:.6; cursor:not-allowed}
     .btn:hover{background:rgba(255,255,255,.12)} .btn.primary{border-color:transparent; background:linear-gradient(135deg, var(--brand-2), var(--brand-1)); color:#071018}
 
     /* Settings modal */
@@ -101,6 +113,15 @@
     .dup-box h4 { margin:0 0 8px 0; }
     .dup-box img { width:100%; border-radius:10px; border:1px solid rgba(255,255,255,.18); margin-bottom:10px; }
 
+    /* Post viewer (full) */
+    .viewer .modal{max-width:900px}
+    .viewer-body{display:grid; gap:14px}
+    .viewer-img{width:100%; max-height:min(80vh,900px); object-fit:contain; background:#0b0d12; border-radius:12px; border:1px solid rgba(255,255,255,.18)}
+    .viewer-meta{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+    .viewer-quote{font-size:clamp(1rem, 2.6vw, 1.4rem); color:#eaf2ff; font-style:italic}
+    .viewer-username{font-weight:700}
+    .viewer-time{color:var(--muted); font-size:.95rem}
+
     /* Skeleton */
     .skeleton{background:linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.12), rgba(255,255,255,.06)); background-size:200% 100%; animation:shimmer 1.3s infinite; border-radius:10px}
     @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -112,6 +133,13 @@
     @keyframes pop{from{transform:translateY(6px); opacity:0} to{transform:translateY(0); opacity:1}}
 
     footer{text-align:center;color:var(--muted);padding:32px 16px;margin-top:40px}
+
+    /* Mobile tweaks */
+    @media (max-width:680px){
+      .row{grid-template-columns:1fr}
+      .post img{aspect-ratio:auto; height:auto}
+      .countdown{flex:1 0 100%}
+    }
   </style>
 </head>
 <body>
@@ -126,7 +154,13 @@
         username:  "entry.448940465"   // Username
       },
       CLOUDINARY: { cloudName: "djjpw13y9", uploadPreset: "quotefeed_unsigned" },
-      DUP_HAMMING_THRESHOLD: 6 // <=6 considered "similar"
+
+      // duplicate/ratelimit tuning
+      DUP_HAMMING_THRESHOLD: 6,             // <=6 considered "similar"
+      RL_WINDOW_MS: 5 * 60 * 1000,          // 5 minutes
+      RL_MAX_POSTS_IN_WINDOW: 3,            // at most 3 per window
+      RL_MIN_INTERVAL_MS: 10 * 1000,        // at least 10s between posts
+      DUP_CONTENT_LOCK_MS: 10 * 60 * 1000   // same content blocked for 10 min
     };
   </script>
 
@@ -137,8 +171,15 @@
     <div class="header-inner">
       <div class="brand"><div class="logo" aria-hidden="true"></div><div>QuoteFeed</div></div>
       <div class="spacer"></div>
+
+      <div class="search" title="Search by @username or quote">
+        🔎 <input id="searchInput" type="search" placeholder="Search @user or quote…" />
+      </div>
+
+      <div class="spacer"></div>
       <div class="countdown" id="countdown">TIME TILL COMMERCE COMMEMORATION DAY — …</div>
       <div class="spacer"></div>
+
       <div class="header-actions">
         <div class="clock" id="clock">--:--:--</div>
         <button class="iconbtn" id="settingsBtn">⚙ Settings</button>
@@ -196,6 +237,24 @@
           <div class="swatches" id="themeSwatches"></div>
         </div>
         <div class="actions"><button class="btn" id="saveSettings">Save</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post Viewer (full) -->
+  <div class="modal-backdrop viewer" id="viewBackdrop" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal" role="document">
+      <div class="modal-head">
+        <strong>Post</strong>
+        <button class="btn" id="closeViewer" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body viewer-body">
+        <img id="viewImg" class="viewer-img" alt="Full image">
+        <div class="viewer-meta">
+          <div class="viewer-username" id="viewUser">@user</div>
+          <div class="viewer-time" id="viewTime">— time</div>
+        </div>
+        <div class="viewer-quote" id="viewQuote">“quote”</div>
       </div>
     </div>
   </div>
@@ -268,22 +327,61 @@
     $('#saveSettings').addEventListener('click', ()=> { toast('Settings saved'); hideModal($('#settingsBackdrop')); });
     $('#settingsBackdrop').addEventListener('click', e=>{ if (e.target===e.currentTarget) hideModal(e.currentTarget); });
 
-    // ---------- Modals ----------
-    $('#fab').addEventListener('click', ()=>showModal($('#modalBackdrop')));
-    $('#closeModal').addEventListener('click', ()=>hideModal($('#modalBackdrop')));
-    $('#modalBackdrop').addEventListener('click', e=>{ if (e.target===e.currentTarget) hideModal(e.currentTarget); });
+    // ---------- Feed state ----------
+    let feedData = [];          // array of { image_url, quote, username, created_at? }
+    const imageCatalog = [];    // {url, hash64}
+    let activeSearch = '';
 
     // ---------- Rendering ----------
-    function renderPost({ username, quote, image_url }) {
+    function formatWhen(ts){
+      try{ return new Date(ts).toLocaleString(); }catch{ return new Date().toLocaleDateString(); }
+    }
+    function renderPost(p) {
       const card = el('div', 'post');
+      card.dataset.username = p.username || '';
+      card.dataset.quote = p.quote || '';
+      card.dataset.image = p.image_url || '';
+      card.dataset.when = p.created_at || '';
+
       const head = el('div', 'post-header');
-      const name = el('div','username'); name.textContent = username?.startsWith('@') ? username : '@' + username;
-      const handle = el('div','handle'); handle.textContent = '• ' + new Date().toLocaleDateString();
+      const name = el('div','username'); name.textContent = p.username?.startsWith('@') ? p.username : '@' + p.username;
+      const handle = el('div','handle'); handle.textContent = '• ' + (p.created_at ? formatWhen(p.created_at) : new Date().toLocaleDateString());
       head.append(name, handle);
-      const img = new Image(); img.src = image_url; img.alt = 'Post image';
-      const q = el('div','post-quote'); q.textContent = `"${quote}"`;
+
+      const img = new Image(); img.src = p.image_url; img.alt = 'Post image';
+      const q = el('div','post-quote'); q.textContent = `"${p.quote}"`;
+
       card.append(head,img,q);
+
+      // open full viewer
+      card.addEventListener('click', ()=>{
+        $('#viewImg').src = p.image_url;
+        $('#viewUser').textContent = p.username?.startsWith('@') ? p.username : '@' + p.username;
+        $('#viewTime').textContent = '— ' + (p.created_at ? formatWhen(p.created_at) : 'Just now');
+        $('#viewQuote').textContent = `“${p.quote}”`;
+        showModal($('#viewBackdrop'));
+      });
+
       return card;
+    }
+    function renderList(list){
+      const posts = $('#posts'); posts.innerHTML = '';
+      for(const p of list) posts.appendChild(renderPost(p));
+      if (!list.length){
+        const empty = el('div','post'); const msg=el('div','post-quote');
+        msg.textContent='No posts match your search yet.'; empty.append(el('div','post-header').appendChild(document.createTextNode('Nothing here')), msg);
+        posts.append(empty);
+      }
+    }
+    function applyFilter(){
+      const q = activeSearch.trim().toLowerCase();
+      if (!q){ renderList(feedData); return; }
+      const filtered = feedData.filter(p=>{
+        const u = (p.username||'').toLowerCase();
+        const t = (p.quote||'').toLowerCase();
+        return u.includes(q.replace(/^@/,'').trim()) || t.includes(q);
+      });
+      renderList(filtered);
     }
 
     // ---------- CSV parsing & mapping ----------
@@ -313,12 +411,10 @@
       return {
         imageIdx: find(['imageurl','image_url','image']),
         quoteIdx: find(['quote','caption','text']),
-        userIdx:  find(['username','user','author','handle','poster'])
+        userIdx:  find(['username','user','author','handle','poster']),
+        timeIdx:  find(['timestamp','time','created','createdat','created_at','date'])
       };
     }
-
-    // ---------- Feed & image hash catalog ----------
-    const imageCatalog = []; // {url, hash64}
 
     function addSkeleton(count=3){
       const posts=$('#posts');
@@ -339,26 +435,31 @@
         const rows = parseCSV(csv).filter(r => r.length > 0);
         if (!rows.length) throw new Error('CSV empty');
         const header = rows[0];
-        const { imageIdx, quoteIdx, userIdx } = mapHeaderIndexes(header);
+        const { imageIdx, quoteIdx, userIdx, timeIdx } = mapHeaderIndexes(header);
         if (imageIdx===-1 || quoteIdx===-1 || userIdx===-1) throw new Error('Missing required columns');
 
-        const data = rows.slice(1).map(r => ({
+        const raw = rows.slice(1).map(r => ({
           image_url: r[imageIdx],
           quote:     r[quoteIdx],
-          username:  r[userIdx]
+          username:  r[userIdx],
+          created_at: timeIdx!==-1 ? r[timeIdx] : ''
         })).filter(x => x.image_url && x.quote && x.username);
 
+        // Newest first (assume sheet appends at bottom)
+        const data = raw.slice().reverse();
+
         clearSkeletons();
-        const posts = $('#posts'); posts.innerHTML='';
         imageCatalog.length = 0;
+        feedData = data;
+        renderList(feedData);
+
+        // Warm image hash catalog (non-blocking)
         for (const p of data) {
-          posts.appendChild(renderPost(p));
           try {
             const h = await hashImageFromURL(p.image_url);
             if (h) imageCatalog.push({ url: p.image_url, hash64: h });
           } catch(_) { /* ignore */ }
         }
-        // (Newest at bottom; reverse() if you want newest first.)
       }catch(e){
         clearSkeletons();
         const err=el('div','post'); const msg=el('div','post-quote');
@@ -455,9 +556,42 @@
           const d = hammingDistanceHash64(h, item.hash64);
           if (d < bestD){ bestD = d; best = item; }
         }
-        if (best && bestD <= CONFIG.DUP_HAMMING_THRESHOLD) return best;
-        return null;
-      }catch(e){ return null; }
+        if (best && bestD <= CONFIG.DUP_HAMMING_THRESHOLD) return { match: best, fileHash: h };
+        return { match: null, fileHash: h };
+      }catch(e){ return { match: null, fileHash: null }; }
+    }
+
+    // ---------- Rate limiting (per-browser) ----------
+    function getRLLog(){
+      try { return JSON.parse(localStorage.getItem('qf_post_log')||'[]'); } catch { return []; }
+    }
+    function setRLLog(arr){
+      localStorage.setItem('qf_post_log', JSON.stringify(arr));
+    }
+    function canPostNow(contentSig){
+      const now = Date.now();
+      let log = getRLLog().filter(x => now - x.t < 24*60*60*1000); // keep last 24h just to bound size
+      // enforce window
+      const windowStart = now - CONFIG.RL_WINDOW_MS;
+      const recent = log.filter(x => x.t >= windowStart);
+      if (recent.length >= CONFIG.RL_MAX_POSTS_IN_WINDOW) {
+        const waitMs = CONFIG.RL_WINDOW_MS - (now - recent[0].t);
+        return { ok:false, reason:`Rate limit: try again in ~${Math.ceil(waitMs/1000)}s.` };
+      }
+      // min interval
+      if (log.length && (now - log[log.length-1].t) < CONFIG.RL_MIN_INTERVAL_MS) {
+        const wait = CONFIG.RL_MIN_INTERVAL_MS - (now - log[log.length-1].t);
+        return { ok:false, reason:`Slow down: wait ${Math.ceil(wait/1000)}s.` };
+      }
+      // duplicate content lock
+      const dup = log.find(x => x.sig === contentSig && (now - x.t) < CONFIG.DUP_CONTENT_LOCK_MS);
+      if (dup) return { ok:false, reason:'Duplicate post blocked (same content recently submitted).' };
+      return { ok:true, reason:'' };
+    }
+    function recordPost(contentSig){
+      const log = getRLLog();
+      log.push({ t: Date.now(), sig: contentSig });
+      setRLLog(log.slice(-100)); // cap
     }
 
     // ---------- Upload + Submit ----------
@@ -487,19 +621,25 @@
     const dupPreview = $('#dupPreview');
     const dupUseBtn = $('#dupUse');
     const dupCancelBtn = $('#dupCancel');
+    const searchInput = $('#searchInput');
 
     let suggestedExistingURL = null;
+    let lastSelectedFileHash = null;
+    let postInFlight = false;
+    let postCooldownTimer = null;
 
     imageInput.addEventListener('change', async () => {
       dupBox.style.display = 'none';
       suggestedExistingURL = null;
+      lastSelectedFileHash = null;
       const f = imageInput.files[0];
       if (!f) { preview.src=''; preview.style.display='none'; return; }
       const url = URL.createObjectURL(f);
       preview.src = url; preview.style.display='block';
 
-      // Find similar existing image
-      const match = await findSimilarImageForFile(f);
+      // Find similar existing image (also captures file hash for RL)
+      const { match, fileHash } = await findSimilarImageForFile(f);
+      lastSelectedFileHash = fileHash;
       if (match){
         suggestedExistingURL = match.url;
         dupPreview.src = match.url;
@@ -519,50 +659,113 @@
       toast('Using existing image URL.');
     });
 
+    function disablePostBtn(disabled, label){
+      const btn = $('#postBtn');
+      btn.disabled = disabled;
+      if (label !== undefined) btn.textContent = label;
+    }
+
     $('#postBtn').addEventListener('click', async () => {
       const username = $('#username').value.trim();
       const quote = $('#quote').value.trim();
       const file = imageInput.files[0];
 
       if (!username || !quote) { toast('Please fill username and quote.'); return; }
+      if (postInFlight) { toast('Already posting…'); return; }
+
+      // build content signature for RL
+      let contentSig = norm(username) + '|' + norm(quote) + '|';
+      if (suggestedExistingURL) {
+        contentSig += 'url:' + norm(suggestedExistingURL);
+      } else {
+        // ensure we have a file and its hash
+        if (!file) { toast('Choose an image or accept the suggested one.'); return; }
+        try {
+          if (!lastSelectedFileHash) lastSelectedFileHash = await hashFromFile(file);
+          contentSig += 'hash:' + lastSelectedFileHash;
+        } catch(e){
+          contentSig += 'hash:unknown';
+        }
+      }
+
+      const rl = canPostNow(contentSig);
+      if (!rl.ok){ toast(rl.reason); return; }
+
+      postInFlight = true;
+      disablePostBtn(true, 'Posting…');
 
       try{
         let finalURL = suggestedExistingURL;
         if (!finalURL){
-          if (!file){ toast('Choose an image or accept the suggested one.'); return; }
           toast('Uploading image…');
           const up = await uploadToCloudinary(file);
           finalURL = up.secure_url;
         }
+
         toast('Submitting post…');
         await submitToGoogleForm({ image_url: finalURL, quote, username });
 
-        // Optimistic UI
-        $('#posts').prepend(renderPost({ image_url: finalURL, quote, username }));
+        // Optimistic UI (newest first)
+        const newPost = { image_url: finalURL, quote, username, created_at: new Date().toISOString() };
+        feedData.unshift(newPost);
+        renderList(activeSearch ? feedData.filter(p=>{
+          const s = activeSearch.toLowerCase();
+          return (p.username||'').toLowerCase().includes(s.replace(/^@/,'')) || (p.quote||'').toLowerCase().includes(s);
+        }) : feedData);
+
         // Update catalog with new image hash if it came from a new upload
-        if (!suggestedExistingURL && file){
+        if (!suggestedExistingURL){
           try {
-            const h = await hashFromFile(file);
+            const h = lastSelectedFileHash || await hashFromFile(file);
             imageCatalog.push({ url: finalURL, hash64: h });
           } catch(_) {}
         }
 
+        // record RL
+        recordPost(contentSig);
+
         toast('Posted!');
         // reset & close
         $('#username').value=''; $('#quote').value=''; imageInput.value=''; preview.style.display='none';
-        suggestedExistingURL = null; dupBox.style.display='none';
+        lastSelectedFileHash = null; suggestedExistingURL = null; dupBox.style.display='none';
         hideModal($('#modalBackdrop'));
+
+        // short cooldown to block frantic clicking
+        if (postCooldownTimer) clearTimeout(postCooldownTimer);
+        disablePostBtn(true, 'Cooling…');
+        postCooldownTimer = setTimeout(()=>{ disablePostBtn(false, 'Post'); }, 1500);
+
       }catch(e){
         console.error(e); toast('Post failed. Check Cloudinary/Form config.');
+        disablePostBtn(false, 'Post');
+      }finally{
+        postInFlight = false;
       }
     });
+
+    // Search
+    let searchDebounce;
+    searchInput.addEventListener('input', ()=>{
+      activeSearch = searchInput.value || '';
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(applyFilter, 120);
+    });
+
+    // Open/close modals
+    $('#fab').addEventListener('click', ()=>showModal($('#modalBackdrop')));
+    $('#closeModal').addEventListener('click', ()=>hideModal($('#modalBackdrop')));
+    $('#modalBackdrop').addEventListener('click', e=>{ if (e.target===e.currentTarget) hideModal(e.currentTarget); });
+
+    $('#closeViewer').addEventListener('click', ()=>hideModal($('#viewBackdrop')));
+    $('#viewBackdrop').addEventListener('click', e=>{ if (e.target===e.currentTarget) hideModal(e.currentTarget); });
 
     // Esc to close any open modal
     window.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
-        const mb = $('#modalBackdrop'), sb = $('#settingsBackdrop');
+        const mb = $('#modalBackdrop'), sb = $('#settingsBackdrop'), vb = $('#viewBackdrop');
         if (mb.getAttribute('aria-hidden')==='false') hideModal(mb);
         if (sb.getAttribute('aria-hidden')==='false') hideModal(sb);
+        if (vb.getAttribute('aria-hidden')==='false') hideModal(vb);
       }
     });
 
