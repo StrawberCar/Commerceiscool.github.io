@@ -42,12 +42,13 @@ async function averageHash(file){
 
 /* ===== Supabase (Discord OAuth + QuoteFeed email) ===== */
 /* Remember me: persistSession based on saved preference (default true) */
-const REMEMBER = localStorage.getItem("qf_remember") !== "false";
+const REMEMBER_FLAG = (localStorage.getItem('qf_remember') ?? '1') === '1';
+
 const supa = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
   auth: {
-    persistSession: REMEMBER,
+    persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    storage: REMEMBER_FLAG ? window.localStorage : window.sessionStorage
   }
 });
 let me=null; // { id, name, avatar, provider }
@@ -642,68 +643,99 @@ function openSettings(){
 
 /* ===== Auth modal (Discord + QuoteFeed email) ===== */
 const authBD=$("#authBackdrop"); $("#closeAuth").onclick=()=>showBD(authBD,false);
+
 function openAuthModal(msg){
   showBD(authBD,true); if(msg) toast(msg);
 
-  const email = $("#authEmail"), pass=$("#authPassword"),
-        uname=$("#authUsername"), avat=$("#authAvatar"),
-        remember=$("#rememberMe"),
-        submit=$("#authSubmit"),
-        discordBtn=$("#discordLoginBtn"),
-        msgbox=$("#authMsg"),
-        seg = authBD.querySelectorAll(".seg-item");
-
-  // Set initial remember toggle from saved pref
-  remember.checked = localStorage.getItem("qf_remember") !== "false";
-  remember.onchange = ()=> localStorage.setItem("qf_remember", remember.checked ? "true":"false");
-
-  // segmented control (signup/login)
-  function setMode(mode){
-    seg.forEach(s=>s.classList.toggle("active", s.dataset.mode===mode));
-    const signup = mode==="signup";
-    $("#signupExtras").style.display = signup ? "" : "none";
-    submit.textContent = signup ? "Create Account" : "Log In";
-    submit.dataset.mode = mode;
-    msgbox.textContent = "";
+  // segmented toggle (Create vs Log In)
+  const seg = authBD.querySelectorAll('.segmented .seg-item');
+  if(seg.length){
+    seg.forEach(btn=>{
+      btn.onclick=()=>{
+        seg.forEach(x=>x.classList.remove('active'));
+        btn.classList.add('active');
+        const mode = btn.dataset.mode; // 'signup' or 'login'
+        const submit = $("#authSubmit");
+        if(submit) submit.textContent = (mode === 'signup') ? 'Create Account' : 'Log In';
+        const extras = $("#signupExtras");
+        if(extras) extras.style.display = (mode === 'signup') ? "" : "none";
+      };
+    });
   }
-  seg.forEach(s => s.onclick = ()=> setMode(s.dataset.mode));
-  setMode("signup");
 
-  // Discord
-  discordBtn.onclick = async()=>{
+  // Remember-me checkbox (optional)
+  const remember = $("#rememberMe");
+  const applyRemember = (val)=> localStorage.setItem('qf_remember', val ? '1' : '0');
+  if(remember){
+    remember.checked = (localStorage.getItem('qf_remember') ?? '1') === '1';
+    remember.onchange = ()=> applyRemember(remember.checked);
+  }
+
+  const emailIn = $("#authEmail");
+  const passIn  = $("#authPassword");
+  const userIn  = $("#authUsername");    // only for signup
+  const avIn    = $("#authAvatar");      // only for signup
+  const msgBox  = $("#authMsg");
+  const submit  = $("#authSubmit");
+  const discord = $("#discordLoginBtn");
+
+  function currentMode(){
+    const active = authBD.querySelector('.segmented .seg-item.active');
+    return active ? active.dataset.mode : 'signup';
+  }
+
+  async function doEmailSignin(){
+    if(remember) applyRemember(remember.checked); // store choice
+    const email = (emailIn?.value||"").trim();
+    const pass  = passIn?.value||"";
+    if(!email || !pass) return toast("Fill email and password");
     try{
-      const {error}=await signInWithDiscord();
-      if(error) msgbox.textContent = error.message || "Sign-in failed";
+      await epSignIn(email,pass);
+      toast("Signed in","ok");
+      showBD(authBD,false);
+      await refreshSession();
     }catch(e){
-      msgbox.textContent = "Sign-in failed";
+      toast(e.message||"Sign-in failed","danger");
+      msgBox && (msgBox.textContent = e.message||"Sign-in failed");
     }
-  };
+  }
 
-  // Submit (signup / login)
-  submit.onclick = async()=>{
-    const mode = submit.dataset.mode;
-    const emailVal=email.value.trim(), passVal=pass.value;
-
-    if(!emailVal || !passVal){ msgbox.textContent="Enter email and password"; return; }
-
+  async function doEmailSignup(){
+    if(remember) applyRemember(remember.checked); // store choice
+    const email = (emailIn?.value||"").trim();
+    const pass  = passIn?.value||"";
+    const uname = (userIn?.value||"").trim();
+    const av    = avIn?.files?.[0] || null;
+    if(!email || !pass) return toast("Fill email and password");
     try{
-      // Update client persistence according to remember toggle (new page loads honor this)
-      localStorage.setItem("qf_remember", remember.checked ? "true":"false");
-
-      if(mode==="signup"){
-        await epSignUp(emailVal, passVal, (uname.value||"").trim(), avat.files?.[0]);
-        msgbox.textContent = "Check your inbox to confirm your email.";
-      }else{
-        await epSignIn(emailVal, passVal);
-        msgbox.textContent = "Signed in!";
-        showBD(authBD,false);
-        await refreshSession();
-      }
+      await epSignUp(email, pass, uname, av);
+      toast("Check your inbox to confirm","ok");
+      msgBox && (msgBox.textContent = "We’ve sent a confirmation link to your email.");
     }catch(e){
-      msgbox.textContent = e.message || "Auth failed";
+      toast(e.message||"Sign-up failed","danger");
+      msgBox && (msgBox.textContent = e.message||"Sign-up failed");
     }
-  };
+  }
+
+  if(submit){
+    submit.onclick = ()=>{
+      if(currentMode()==='signup') return doEmailSignup();
+      return doEmailSignin();
+    };
+  }
+
+  // OAuth (Discord only)
+  if(discord){
+    discord.onclick = async ()=>{
+      if(remember) applyRemember(remember.checked); // store choice before redirect
+      try{
+        const { error } = await signInWithDiscord();
+        if(error) toast(error.message||"Sign-in failed","danger");
+      }catch(_){}
+    };
+  }
 }
+
 
 /* ===== Share modal ===== */
 const shareBD=$("#shareBackdrop"); $("#closeShare").onclick=()=>showBD(shareBD,false);
