@@ -1,5 +1,5 @@
 window.QUOTEFEED_CONFIG = {
-  SITE_BASE_URL: "https://strawbercar.github.io/Commerceiscool.github.io/", 
+  SITE_BASE_URL: "https://raw.githubusercontent.com/StrawberCar/Commerceiscool.github.io/refs/heads/main/", 
   SUPABASE_URL: "https://umihgrtryvdzmnpskllj.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVtaWhncnRyeXZkem1ucHNrbGxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU0NjAzODksImV4cCI6MjA3MTAzNjM4OX0.tk-bzkim9CkFPCyPUZKuwdl0BomMs6abZjeeivfuh2o",
   OAUTH_PROVIDERS: ["discord","github","gitlab"],
