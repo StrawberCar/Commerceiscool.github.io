@@ -56,20 +56,20 @@
 
   <!-- Composer modal -->
   <div id="composeBackdrop" class="backdrop" aria-hidden="true">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Create a post">
       <div class="modal-head">
         <div class="modal-title">Create a post</div>
-        <button id="closeCompose" class="icon">✕</button>
+        <button id="closeCompose" class="icon" aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
         <input id="titleInput" class="input" maxlength="140" placeholder="Title / Header"/>
         <textarea id="bodyInput" class="input" rows="4" placeholder="Body text…"></textarea>
 
         <div class="row">
-          <label class="btn ghost">
-            <input id="fileInput" type="file" accept="image/*,video/*" hidden>
+          <label class="btn ghost" for="fileInput" style="cursor:pointer">
             ⤴️ Add image/video
           </label>
+          <input id="fileInput" type="file" accept="image/*,video/*" hidden>
           <div id="fileInfo" class="meta">No file</div>
         </div>
         <div id="filePreview" class="preview" style="display:none"></div>
@@ -84,12 +84,12 @@
     </div>
   </div>
 
-  <!-- Post modal -->
+  <!-- Post/Profile modal -->
   <div id="postBackdrop" class="backdrop" aria-hidden="true">
-    <div class="modal modal-wide">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-label="Post">
       <div class="modal-head">
         <div class="modal-title">Post</div>
-        <button id="closePostModal" class="icon">✕</button>
+        <button id="closePostModal" class="icon" aria-label="Close">✕</button>
       </div>
       <div id="modalLoading" class="loading"><span class="spinner"></span><span class="loading-text">Loading…</span></div>
       <div id="postModalBody" class="modal-body"></div>
@@ -98,10 +98,10 @@
 
   <!-- Settings modal -->
   <div id="settingsBackdrop" class="backdrop" aria-hidden="true">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Settings">
       <div class="modal-head">
         <div class="modal-title">Settings</div>
-        <button id="closeSettings" class="icon">✕</button>
+        <button id="closeSettings" class="icon" aria-label="Close">✕</button>
       </div>
       <div id="settingsBody" class="modal-body"></div>
     </div>
@@ -109,15 +109,14 @@
 
   <!-- Auth modal — QuoteFeed email/password + Discord -->
   <div id="authBackdrop" class="backdrop" aria-hidden="true">
-    <div class="modal auth-modal">
+    <div class="modal auth-modal" role="dialog" aria-modal="true" aria-label="Authentication">
       <div class="modal-head">
         <div class="modal-title">✨ QuoteFeed ✨</div>
-        <button id="closeAuth" class="icon">✕</button>
+        <button id="closeAuth" class="icon" aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
         <div class="auth-hero">Create your space for quotes, ideas & inspo.</div>
 
-        <!-- segmented toggle -->
         <div class="segmented" role="tablist" aria-label="Auth mode">
           <button class="seg-item active" data-mode="signup" role="tab">🆕 Create New Account</button>
           <button class="seg-item" data-mode="login" role="tab">🔐 Log In</button>
@@ -133,13 +132,6 @@
             <span>🔑 Password</span>
             <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••">
           </label>
-
-          <!-- Remember me -->
-          <label class="row" style="gap:8px;align-items:center;margin:6px 0 4px">
-            <input id="rememberMe" type="checkbox" checked>
-            <span class="meta">Stay signed in</span>
-          </label>
-
 
           <!-- Only shown for Create New Account (QuoteFeed account) -->
           <div id="signupExtras">
@@ -157,6 +149,12 @@
             </div>
           </div>
 
+          <!-- Remember me -->
+          <label class="row" style="gap:8px;align-items:center;margin:6px 0 4px">
+            <input id="rememberMe" type="checkbox" checked>
+            <span class="meta">Stay signed in</span>
+          </label>
+
           <button id="authSubmit" class="btn brand">Create Account</button>
 
           <div class="divider"><span>or</span></div>
@@ -171,10 +169,10 @@
 
   <!-- Share modal -->
   <div id="shareBackdrop" class="backdrop" aria-hidden="true">
-    <div class="modal">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Share">
       <div class="modal-head">
         <div class="modal-title">Share</div>
-        <button id="closeShare" class="icon">✕</button>
+        <button id="closeShare" class="icon" aria-label="Close">✕</button>
       </div>
       <div class="modal-body">
         <input id="shareLink" class="input" readonly/>

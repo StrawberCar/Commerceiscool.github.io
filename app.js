@@ -41,7 +41,6 @@ async function averageHash(file){
 }
 
 /* ===== Supabase (Discord OAuth + QuoteFeed email) ===== */
-/* Remember me: persistSession based on saved preference (default true) */
 const REMEMBER_FLAG = (localStorage.getItem('qf_remember') ?? '1') === '1';
 
 const supa = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
@@ -54,9 +53,7 @@ const supa = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, {
 let me=null; // { id, name, avatar, provider }
 function isQFAccount(){ return me?.provider === "email"; } // QuoteFeed account
 
-/* Pick up auth events so redirects (email confirm / discord) set the session */
 supa.auth.onAuthStateChange((_event, _session) => {
-  // no-op; supabase handles storage when persistSession=true
   refreshSession(); // keep UI in sync
 });
 
@@ -106,6 +103,13 @@ async function epSignUp(email, pass, username, avatarFile){
       avatarUrl = pub.publicUrl;
       await supa.auth.updateUser({ data: { avatar_url: avatarUrl } });
     }catch(e){ /* ignore upload failures */ }
+  }
+  // Try immediate sign-in (works if email confirmations are disabled)
+  try{ await epSignIn(email, pass); }catch(e){
+    if(String(e.message||"").toLowerCase().includes("confirm")) {
+      throw new Error("Please confirm your email to finish sign-up.");
+    }
+    throw e;
   }
   return { id:userId, avatarUrl };
 }
@@ -184,6 +188,21 @@ function cacheGet(key,ttl=60){ try{ const j=JSON.parse(localStorage.getItem(key)
 function cacheSet(key,val){ try{ localStorage.setItem(key, JSON.stringify({t:Date.now(), v:val})); }catch{} }
 function cacheClear(){ Object.keys(localStorage).filter(k=>k.startsWith("qf_cache_")).forEach(k=>localStorage.removeItem(k)); }
 
+/* ===== Preload cache for post details/comments ===== */
+const preCache = { posts: new Map(), comments: new Map() };
+const PRELOAD_COUNT = CFG.PRELOAD_COUNT ?? 8;
+async function preloadForFeed(items){
+  const slice = items.slice(0, PRELOAD_COUNT);
+  for(const p of slice){
+    if(!preCache.posts.has(p.id)){
+      API.getPost(p.id).then(d=>{ if(d?.post) preCache.posts.set(p.id, d.post); }).catch(()=>{});
+    }
+    if(!preCache.comments.has(p.id)){
+      API.listComments(p.id).then(d=>{ if(d?.items) preCache.comments.set(p.id, d.items); }).catch(()=>{});
+    }
+  }
+}
+
 /* ===== State ===== */
 const state={ posts:[], offset:0, exhausted:false, search:"", sort:"new", topic:"", editing:null };
 
@@ -246,14 +265,16 @@ function renderCard(p){
   );
   const title=el("div",{className:"title"}, p.title||"(No title)");
   if(p.edited_at) title.append(" ", el("span",{className:"badge edited"},"edited"));
+  if(p._pending){ title.append(" ", el("span",{className:"badge pending"}, el("span",{className:"spinner"})," Pending…")); }
   const body=el("div",{className:"body"}, p.body||"");
   const card=el("div",{className:"card", "data-post":p.id});
   card.append(head, title, body);
   if(p.media_url){
+    const src = p._localUrl || p.media_url;
     const m=el("div",{className:"media"},
-      p.media_type==="video"
-        ? el("video",{src:p.media_url,controls:true,preload:"metadata"})
-        : el("img",{src:p.media_url,loading:"lazy"})
+      (p.media_type==="video")
+        ? el("video",{src:src,controls:true,preload:"metadata"})
+        : el("img",{src:src,loading:"lazy"})
     );
     card.append(m);
   }
@@ -276,7 +297,7 @@ function renderCard(p){
   shareB.onclick=()=>openShare({type:"post",id:p.id,title:p.title});
   const actions=el("div",{className:"actions"}, likeB,dlikeB,viewB,shareB);
 
-  if(me && me.id===p.user_id){
+  if(me && me.id===p.user_id && !p._pending){
     const more=el("button",{className:"iconbtn"},"⋯");
     let open=false, dd;
     more.onclick=()=>{
@@ -342,33 +363,79 @@ function resetComposer(p=null){
 postBtn.onclick=async()=>{
   if(!me) return openAuthModal();
   const title=titleInput.value.trim(), body=bodyInput.value.trim(), topics=parseTopics(topicsInput.value);
-  let media_url=null, media_type=null, media_id=null;
-  if(fileInput.files?.[0]){
-    const f=fileInput.files[0];
-    if(f.size>CFG.MAX_FILE_BYTES){ toast("File too large","danger"); return; }
-    const up=await API.uploadToDrive(fileInput);
-    if(!up.ok) return toast(up.error||"Upload failed","danger");
-    media_url=up.url; media_type=f.type.startsWith("video/")?"video":"image"; media_id=up.id;
+  const f=fileInput.files?.[0]||null;
+  if(!title && !body && !f) return toast("Write something or add media");
+
+  // immediate optimistic "pending" post
+  const tempId = "temp-"+uuid();
+  const localUrl = f ? URL.createObjectURL(f) : null;
+  const tempPost = {
+    id: tempId,
+    created_at: new Date().toISOString(),
+    user_id: me.id, user_name: me.name, user_avatar: me.avatar,
+    title, body, topics,
+    media_url: localUrl, media_type: f ? (f.type.startsWith("video/")?"video":"image") : null,
+    like_count: 0, dislike_count: 0, comment_count: 0,
+    _pending: true, _localUrl: localUrl
+  };
+  state.posts.unshift(tempPost);
+  feedEl.prepend(renderCard(tempPost));
+  $("#composeHint").textContent="Uploading…"; $("#composeHint").hidden=false;
+  postBtn.disabled=true; const oldBtnTxt=postBtn.textContent; postBtn.textContent="Publishing…";
+
+  try{
+    let media_url=null, media_type=null, media_id=null;
+    if(f){
+      if(f.size>CFG.MAX_FILE_BYTES){ throw new Error("File too large"); }
+      const up=await API.uploadToDrive(fileInput);
+      if(!up.ok) throw new Error(up.error||"Upload failed");
+      media_url=up.url; media_type=tempPost.media_type; media_id=up.id;
+    }
+    const id=uuid();
+    const title_hash=title?await hashHex(title):null, body_hash=body?await hashHex(body):null, media_hash=await averageHash(f);
+    const res=await API.createPost({ id,user_id:me.id,user_name:me.name,user_avatar:me.avatar,title,body,media_url,media_type,media_id,title_hash,body_hash,media_hash,topics });
+
+    if(res.dup && res.existing){
+      toast("Looks similar to an existing post");
+      replacePending(tempId, res.existing);
+      showBD(composeBD,false);
+      return;
+    }
+    if(!res.ok) throw new Error(res.error||"Failed to create");
+
+    replacePending(tempId, res.post);
+    $("#composeHint").textContent="✓ Posted"; $("#composeHint").hidden=false;
+    toast("Post published!","ok");
+    setTimeout(()=>showBD(composeBD,false),400);
+  }catch(e){
+    markPendingFailed(tempId, e?.message || "Failed to create");
+  }finally{
+    postBtn.disabled=false; postBtn.textContent=oldBtnTxt;
+    resetComposer();
   }
-  if(state.editing){
-    const p=state.editing;
-    const payload={ id:p.id, title, body, topics, media_url, media_type, media_id };
-    const res=await API.editPost(payload);
-    if(!res.ok) return toast(res.error||"Edit failed","danger");
-    Object.assign(p,res.post);
-    await loadInitial(true);
-    $("#composeHint").textContent="✓ Edited"; $("#composeHint").hidden=false; setTimeout(()=>showBD(composeBD,false),400);
-    return;
-  }
-  if(!title && !body && !media_url) return toast("Write something or add media");
-  const id=uuid();
-  const title_hash=title?await hashHex(title):null, body_hash=body?await hashHex(body):null, media_hash=await averageHash(fileInput.files?.[0]);
-  const res=await API.createPost({ id,user_id:me.id,user_name:me.name,user_avatar:me.avatar,title,body,media_url,media_type,media_id,title_hash,body_hash,media_hash,topics });
-  if(res.dup && res.existing){ toast("Looks similar to an existing post"); openPostModal(res.existing.id); return; }
-  if(!res.ok) return toast(res.error||"Failed to create","danger");
-  state.posts.unshift(res.post); feedEl.prepend(renderCard(res.post));
-  resetComposer(); $("#composeHint").textContent="✓ Posted"; $("#composeHint").hidden=false; setTimeout(()=>showBD(composeBD,false),400);
 };
+
+function replacePending(tempId, realPost){
+  const i = state.posts.findIndex(p=>p.id===tempId);
+  if(i>=0) state.posts[i] = realPost;
+  renderFeed();
+}
+function markPendingFailed(tempId, msg){
+  toast(msg, "danger");
+  const node = feedEl.querySelector(`[data-post="${CSS.escape(tempId)}"]`);
+  if(node){
+    const badge = node.querySelector(".badge.pending");
+    badge?.remove();
+    const fail = el("span",{className:"badge",style:"border-color:var(--danger);color:var(--danger)"},"failed");
+    const title = node.querySelector(".title"); title && title.append(" ", fail);
+    const actions = node.querySelector(".actions");
+    if(actions){
+      const retry=el("button",{className:"btn sm"},"Retry");
+      retry.onclick=()=>{ openEditor({ id:null, title:titleInput.value, body:bodyInput.value, topics:parseTopics(topicsInput.value) }); };
+      actions.append(retry);
+    }
+  }
+}
 
 function openEditor(p){ state.editing=p; resetComposer(p); showBD(composeBD,true); }
 async function confirmDeletePost(p){
@@ -381,11 +448,13 @@ async function confirmDeletePost(p){
 
 /* ===== Post modal (view & comments) ===== */
 const postBD=$("#postBackdrop"), postBody=$("#postModalBody"), modalLoading=$("#modalLoading");
-$("#closePostModal").onclick=()=>showBD(postBD,false);
+$("#closePostModal").onclick=()=>{ showBD(postBD,false); setModalLoading(false); };
 function setModalLoading(on,text="Loading…"){ modalLoading.hidden=!on; modalLoading.querySelector(".loading-text").textContent=text; }
 
 async function openPostModal(post_id){
   setModalLoading(true,"Loading post…"); showBD(postBD,true);
+  const cached = preCache.posts.get(post_id);
+  if(cached){ buildPostView(cached); setModalLoading(false); }
   try{
     const { post, ok } = await API.getPost(post_id);
     if(!ok){ toast("Post not found","danger"); setModalLoading(false); return; }
@@ -421,19 +490,14 @@ function buildPostView(post){
     postBody.append(el("div",{className:"card"}, wrap));
   }
 
-  const reactList=el("div",{className:"meta"},"Loading reactions…");
-  API.whoReacted(post.id).then(r=>{
-    const arr=[]; if(r.likes?.length)arr.push(`❤️ ${r.likes.length}`); if(r.dislikes?.length)arr.push(`👎 ${r.dislikes.length}`);
-    reactList.textContent=arr.length?arr.join("  •  "):"No reactions yet.";
-  });
-  postBody.append(el("div",{className:"card"}, reactList));
-
-  const box=el("div",{}), input=el("textarea",{className:"input",rows:3,placeholder:"Write a comment…"}), add=el("button",{className:"btn brand"},"Comment");
+  // Comments area — composer at TOP
+  const listBox=el("div",{}); // comments list lives here
+  const input=el("textarea",{className:"input",rows:3,placeholder:"Write a comment…"});
+  const add=el("button",{className:"btn brand"},"Comment");
   add.onclick=async()=>{
     if(!me) return openAuthModal();
     const c=input.value.trim(); if(!c) return;
 
-    // Optimistic comment with "Pending…" + spinner
     const tempId = "temp-"+uuid();
     const pending = renderOneComment({
       id: tempId,
@@ -443,17 +507,14 @@ function buildPostView(post){
       content: c,
       _pending: true
     });
-    box.prepend(pending);
+    listBox.prepend(pending);
     input.value="";
 
     try{
       const res=await API.addComment(post.id,me,c);
-      // Replace list with server truth (ensures counts/order accurate)
-      renderComments(box,res.items);
-      // Feedback
+      renderComments(listBox,res.items);
       const okmsg=el("div",{className:"meta"},"✓ Comment posted"); postBody.append(okmsg); setTimeout(()=>okmsg.remove(),1200);
     }catch{
-      // Mark failed
       pending.querySelector(".badge")?.remove();
       const fail = el("span",{className:"badge",style:"border-color:var(--danger);color:var(--danger)"},"failed");
       pending.querySelector(".meta.time")?.append(" • ", fail);
@@ -462,17 +523,23 @@ function buildPostView(post){
         retry.disabled=true;
         try{
           const res=await API.addComment(post.id,me,c);
-          renderComments(box,res.items);
+          renderComments(listBox,res.items);
         }catch{ retry.disabled=false; }
       };
       pending.append(retry);
     }
   };
+
+  const composerRow = el("div",{className:"row right",style:"margin-bottom:8px"}, input, add);
   postBody.append(el("div",{className:"card"},
-    el("div",{style:"font-weight:800"},"Comments"), box,
-    el("div",{className:"row right",style:"margin-top:8px"}, input, add)
+    el("div",{style:"font-weight:800"},"Comments"),
+    composerRow,
+    listBox
   ));
-  API.listComments(post.id).then(r=>renderComments(box,r.items));
+
+  const cached = preCache.comments.get(post.id);
+  if(cached) renderComments(listBox,cached);
+  API.listComments(post.id).then(r=>renderComments(listBox,r.items));
 }
 function renderOneComment(c){
   const head = el("div",{className:"post-head"},
@@ -636,7 +703,7 @@ function openSettings(){
       el("div",{className:"row right"},apply)
     ),
     el("div",{className:"card"}, el("div",{style:"font-weight:800"},"Data"), clr),
-    el("div",{className:"card"}, el("div",{style:"font-weight:800;color:var(--danger)"},"Danger Zone"), el("div",{className:"meta"},"This cannot be undone."), delAcc)
+    el("div",{className:"card"}, el("div",{className:"section-title",style:"color:var(--danger)"},"Danger Zone"), el("div",{className:"meta"},"This cannot be undone."), delAcc)
   );
   showBD(settingsBD,true);
 }
@@ -685,7 +752,7 @@ function openAuthModal(msg){
   }
 
   async function doEmailSignin(){
-    if(remember) applyRemember(remember.checked); // store choice
+    if(remember) applyRemember(remember.checked);
     const email = (emailIn?.value||"").trim();
     const pass  = passIn?.value||"";
     if(!email || !pass) return toast("Fill email and password");
@@ -701,7 +768,7 @@ function openAuthModal(msg){
   }
 
   async function doEmailSignup(){
-    if(remember) applyRemember(remember.checked); // store choice
+    if(remember) applyRemember(remember.checked);
     const email = (emailIn?.value||"").trim();
     const pass  = passIn?.value||"";
     const uname = (userIn?.value||"").trim();
@@ -709,11 +776,18 @@ function openAuthModal(msg){
     if(!email || !pass) return toast("Fill email and password");
     try{
       await epSignUp(email, pass, uname, av);
-      toast("Check your inbox to confirm","ok");
-      msgBox && (msgBox.textContent = "We’ve sent a confirmation link to your email.");
+      toast("You’re in!","ok");
+      showBD(authBD,false);
+      await refreshSession();
     }catch(e){
-      toast(e.message||"Sign-up failed","danger");
-      msgBox && (msgBox.textContent = e.message||"Sign-up failed");
+      const msg = String(e.message||"");
+      if(msg.toLowerCase().includes("confirm")){
+        toast("Check your inbox to confirm","ok");
+        msgBox && (msgBox.textContent = "We’ve sent a confirmation link to your email.");
+      }else{
+        toast(msg||"Sign-up failed","danger");
+        msgBox && (msgBox.textContent = msg||"Sign-up failed");
+      }
     }
   }
 
@@ -724,10 +798,9 @@ function openAuthModal(msg){
     };
   }
 
-  // OAuth (Discord only)
   if(discord){
     discord.onclick = async ()=>{
-      if(remember) applyRemember(remember.checked); // store choice before redirect
+      if(remember) applyRemember(remember.checked);
       try{
         const { error } = await signInWithDiscord();
         if(error) toast(error.message||"Sign-in failed","danger");
@@ -735,7 +808,6 @@ function openAuthModal(msg){
     };
   }
 }
-
 
 /* ===== Share modal ===== */
 const shareBD=$("#shareBackdrop"); $("#closeShare").onclick=()=>showBD(shareBD,false);
@@ -762,14 +834,20 @@ async function loadInitial(skipCache=false){
   state.offset=0; state.exhausted=false;
   const key = cacheKey({s:state.search, sort:state.sort, topic:state.topic, off:0});
   let data = !skipCache && cacheGet(key);
-  if(!data){
-    data = await API.list({ search:state.search, offset:0, limit:CFG.PAGE_SIZE, sort:state.sort, topic:state.topic });
-    cacheSet(key, data);
+  try{
+    if(!data){
+      data = await API.list({ search:state.search, offset:0, limit:CFG.PAGE_SIZE, sort:state.sort, topic:state.topic });
+      cacheSet(key, data);
+    }
+    state.posts=data.items||[];
+    renderFeed();
+    loadMoreBtn.style.display=(state.posts.length<(data.total||0))?"":"none";
+    state.offset=state.posts.length;
+    preloadForFeed(state.posts);
+  }catch(e){
+    feedEl.innerHTML="";
+    toast("Failed to load feed","danger");
   }
-  state.posts=data.items||[];
-  renderFeed();
-  loadMoreBtn.style.display=(state.posts.length<(data.total||0))?"":"none";
-  state.offset=state.posts.length;
 }
 loadMoreBtn.onclick=async()=>{
   if(state.exhausted) return;
@@ -779,6 +857,7 @@ loadMoreBtn.onclick=async()=>{
   state.posts.push(...items);
   const frag=document.createDocumentFragment(); for(const p of items) frag.append(renderCard(p)); feedEl.append(frag);
   state.offset+= items.length; if(state.offset>=(data.total||0)){ state.exhausted=true; loadMoreBtn.style.display="none"; }
+  preloadForFeed(items);
 };
 
 /* ===== Search/sort ===== */
@@ -786,7 +865,23 @@ $("#searchInput").addEventListener("input",()=>{ clearTimeout(window.__st); wind
 $("#sortSelect").addEventListener("change",()=>{ state.sort=$("#sortSelect").value; loadInitial(true); });
 
 /* ===== Helpers ===== */
-function showBD(node,on){ node.style.display=on?"flex":"none"; node.setAttribute("aria-hidden", on?"false":"true"); }
+function showBD(node,on){
+  node.style.display=on?"flex":"none";
+  node.setAttribute("aria-hidden", on?"false":"true");
+  // Prevent background scroll when any modal is open
+  const anyOpen = Array.from(document.querySelectorAll('.backdrop')).some(b=>b.style.display==="flex");
+  document.body.style.overflow = anyOpen ? "hidden" : "";
+  // When closing the post modal, also hide spinner
+  if(!on && node===postBD){ setModalLoading(false); }
+}
+// close on ESC + backdrop clicks
+(function(){
+  const bds=[composeBD, postBD, settingsBD, authBD, shareBD].filter(Boolean);
+  bds.forEach(bd=>{
+    bd.addEventListener("click", (e)=>{ if(e.target===bd) showBD(bd,false); });
+  });
+  document.addEventListener("keydown", (e)=>{ if(e.key==="Escape"){ bds.forEach(bd=>{ if(bd.style.display==="flex") showBD(bd,false); }); }});
+})();
 function confirmModal(title, body, requireText=null){
   return new Promise(resolve=>{
     const bd=document.createElement("div"); bd.className="backdrop"; bd.style.display="flex";
@@ -814,7 +909,7 @@ window.addEventListener("hashchange",handleHash);
 
 /* ===== init ===== */
 (async function(){
-  feedEl.innerHTML=""; for(let i=0;i<3;i++) feedEl.append(el("div",{className:"card skeleton",style:"height:140px"}));
+  feedEl.innerHTML=""; for(let i=0;i<3;i++) feedEl.append(el("div",{className:"card skeleton",style:"height:140px; margin-bottom:28px"}));
   await refreshSession();
   await loadInitial();
   handleHash();
